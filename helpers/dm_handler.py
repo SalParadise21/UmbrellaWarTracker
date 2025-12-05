@@ -1,7 +1,8 @@
 """DM message handler for stat entry interactions"""
 import discord
 import re
-from typing import Dict
+import time
+from typing import Dict, Optional, Tuple
 
 from helpers.database import update_user_stats, set_user_stat
 from helpers.embed_helper import create_stat_update_embed
@@ -9,6 +10,10 @@ from helpers.embed_helper import create_stat_update_embed
 
 # Store active DM interactions
 active_dm_sessions: Dict[int, Dict] = {}  # {user_id: {'war_id': int, 'mode': 'manual_step'|'edit', 'current_stat': str, 'stats': dict, 'stat_index': int, 'editing_stats': dict}}
+
+# Rate limiting for "Skip" responses: {user_id: last_skip_timestamp}
+skip_rate_limit: Dict[int, float] = {}
+SKIP_RATE_LIMIT_SECONDS = 2.0  # Ignore "Skip" if sent within 2 seconds of previous "Skip"
 
 # List of all stats in order
 STAT_ORDER = [
@@ -48,6 +53,83 @@ STAT_NAMES = {
     'supply_value_delivered': 'Supply Value Delivered'
 }
 
+# Validation constants
+MIN_STAT_VALUE = 0
+MAX_STAT_VALUE = 999999999
+
+
+def validate_stat_input(content: str) -> Tuple[bool, Optional[int], Optional[str]]:
+    """
+    Validate stat input according to data governance rules.
+    
+    Rules:
+    - Only numbers allowed (no text, spaces, hyphens)
+    - Value must be >= 0 and <= 999,999,999
+    
+    Returns:
+        Tuple of (is_valid, value, error_message)
+        - is_valid: True if input is valid
+        - value: The parsed integer value if valid, None otherwise
+        - error_message: Error message if invalid, None otherwise
+    """
+    content = content.strip()
+    
+    # Check for empty input
+    if not content:
+        return False, None, "Input cannot be empty. Please enter a number between 0 and 999,999,999."
+    
+    # Check for spaces
+    if ' ' in content:
+        return False, None, "❌ **Invalid input**: Spaces are not allowed.\n\nPlease enter only numbers (0-999,999,999) with no spaces, text, or hyphens."
+    
+    # Check for hyphens
+    if '-' in content:
+        return False, None, "❌ **Invalid input**: Hyphens are not allowed.\n\nPlease enter only numbers (0-999,999,999) with no spaces, text, or hyphens."
+    
+    # Check if content contains only digits
+    if not content.isdigit():
+        return False, None, "❌ **Invalid input**: Only numbers are allowed (no text, spaces, or hyphens).\n\nPlease enter a number between 0 and 999,999,999."
+    
+    # Parse the number
+    try:
+        value = int(content)
+    except ValueError:
+        return False, None, "❌ **Invalid input**: Could not parse number.\n\nPlease enter a number between 0 and 999,999,999."
+    
+    # Check range
+    if value < MIN_STAT_VALUE:
+        return False, None, f"❌ **Invalid input**: Value must be >= {MIN_STAT_VALUE:,}.\n\nPlease enter a number between 0 and 999,999,999."
+    
+    if value > MAX_STAT_VALUE:
+        return False, None, f"❌ **Invalid input**: Value must be <= {MAX_STAT_VALUE:,}.\n\nPlease enter a number between 0 and 999,999,999."
+    
+    return True, value, None
+
+
+def check_skip_rate_limit(user_id: int) -> bool:
+    """
+    Check if "Skip" command should be rate limited.
+    
+    Returns:
+        True if "Skip" should be processed, False if it should be ignored
+    """
+    current_time = time.time()
+    
+    if user_id in skip_rate_limit:
+        last_skip_time = skip_rate_limit[user_id]
+        if current_time - last_skip_time < SKIP_RATE_LIMIT_SECONDS:
+            # Rate limited - ignore this skip
+            return False
+    
+    # Update last skip time
+    skip_rate_limit[user_id] = current_time
+    return True
+
+
+def reset_skip_rate_limit(user_id: int):
+    """Reset the skip rate limit for a user (call when new prompt is sent)"""
+    skip_rate_limit.pop(user_id, None)
+
 
 async def handle_dm_message(message: discord.Message, bot):
     """Handle incoming DM messages for stat entry"""
@@ -62,11 +144,17 @@ async def handle_dm_message(message: discord.Message, bot):
     # Handle cancel
     if message.content.lower() == 'cancel':
         del active_dm_sessions[user_id]
+        reset_skip_rate_limit(user_id)
         await message.channel.send("Stat entry cancelled.")
         return True
     
-    # Handle skip (for manual step-by-step entry)
+    # Handle skip (for manual step-by-step entry) with rate limiting
     if message.content.lower() == 'skip' and session.get('mode') == 'manual_step':
+        # Check rate limit
+        if not check_skip_rate_limit(user_id):
+            # Rate limited - ignore this skip
+            return True
+        
         # Use 0 for skipped stat
         if 'stats' not in session:
             session['stats'] = {}
@@ -84,6 +172,7 @@ async def handle_dm_message(message: discord.Message, bot):
                 **session['stats']
             )
             del active_dm_sessions[user_id]
+            reset_skip_rate_limit(user_id)
             
             embed = create_stat_update_embed(session['stats'])
             await message.channel.send(
@@ -100,30 +189,44 @@ async def handle_dm_message(message: discord.Message, bot):
             embed = discord.Embed(
                 title=f"📊 Stat Entry {progress}",
                 description=f"**{STAT_NAMES[next_stat]}**\n\n"
-                           f"Please enter the value for this stat.\n"
+                           f"Please enter the value for this stat.\n\n"
+                           f"**Requirements:**\n"
+                           f"• Numbers only (0-999,999,999)\n"
+                           f"• No spaces, text, or hyphens\n"
+                           f"• Value must be >= 0 and <= 999,999,999\n\n"
                            f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
                 color=discord.Color.blue()
             )
             await message.channel.send(embed=embed)
+            # Reset rate limit when new prompt is sent
+            reset_skip_rate_limit(user_id)
             return True
     
     # Handle manual step-by-step entry mode
     if session['mode'] == 'manual_step':
         try:
-            # Try to extract a number from the message
             content = message.content.strip()
             
-            # Look for any number in the message
-            numbers = re.findall(r'\d+', content)
-            if not numbers:
-                await message.channel.send(
-                    "❌ I couldn't find a number in your message. Please enter just the number (e.g., `1000` or `0`).\n"
-                    f"Current stat: **{STAT_NAMES.get(session['current_stat'], session['current_stat'])}**"
-                )
-                return True
+            # Validate input using data governance rules
+            is_valid, stat_value, error_message = validate_stat_input(content)
             
-            # Use the first number found
-            stat_value = int(numbers[0])
+            if not is_valid:
+                # Show error and reprompt
+                current_stat_name = STAT_NAMES.get(session['current_stat'], session['current_stat'])
+                progress = f"({session['stat_index'] + 1}/{len(STAT_ORDER)})"
+                embed = discord.Embed(
+                    title=f"📊 Stat Entry {progress}",
+                    description=f"**{current_stat_name}**\n\n"
+                               f"{error_message}\n\n"
+                               f"**Requirements:**\n"
+                               f"• Numbers only (0-999,999,999)\n"
+                               f"• No spaces, text, or hyphens\n"
+                               f"• Value must be >= 0 and <= 999,999,999\n\n"
+                               f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
+                    color=discord.Color.red()
+                )
+                await message.channel.send(embed=embed)
+                return True
             
             # Store the stat
             if 'stats' not in session:
@@ -142,6 +245,7 @@ async def handle_dm_message(message: discord.Message, bot):
                     **session['stats']
                 )
                 del active_dm_sessions[user_id]
+                reset_skip_rate_limit(user_id)
                 
                 embed = create_stat_update_embed(session['stats'])
                 await message.channel.send(
@@ -158,18 +262,19 @@ async def handle_dm_message(message: discord.Message, bot):
                 embed = discord.Embed(
                     title=f"📊 Stat Entry {progress}",
                     description=f"**{STAT_NAMES[next_stat]}**\n\n"
-                               f"Please enter the value for this stat.\n"
+                               f"Please enter the value for this stat.\n\n"
+                               f"**Requirements:**\n"
+                               f"• Numbers only (0-999,999,999)\n"
+                               f"• No spaces, text, or hyphens\n"
+                               f"• Value must be >= 0 and <= 999,999,999\n\n"
                                f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
                     color=discord.Color.blue()
                 )
                 await message.channel.send(embed=embed)
+                # Reset rate limit when new prompt is sent
+                reset_skip_rate_limit(user_id)
                 return True
                 
-        except ValueError:
-            await message.channel.send(
-                "❌ Please enter a valid number. You can also type `skip` to use 0 for this stat."
-            )
-            return True
         except Exception as e:
             await message.channel.send(f"❌ Error processing stat: {str(e)}")
             return True
@@ -192,21 +297,33 @@ async def handle_dm_message(message: discord.Message, bot):
                 # Handle cancel
                 if content.lower() == 'cancel':
                     del active_dm_sessions[user_id]
+                    reset_skip_rate_limit(user_id)
                     await message.channel.send("Stat editing cancelled.")
                     return True
                 
-                # Extract number
-                numbers = re.findall(r'\d+', content)
-                if not numbers:
-                    current_val = session['editing_stats'].get(session['editing_stat'], 0)
-                    await message.channel.send(
-                        f"❌ I couldn't find a number in your message. Please enter the new value for **{STAT_NAMES.get(session['editing_stat'], session['editing_stat'])}**.\n"
-                        f"Current value: **{int(current_val):,}**\n"
-                        f"Type `cancel` to cancel."
+                # Validate input using data governance rules
+                is_valid, new_value, error_message = validate_stat_input(content)
+                
+                if not is_valid:
+                    # Show error and reprompt
+                    stat_name = session['editing_stat']
+                    current_val = session['editing_stats'].get(stat_name, 0)
+                    embed = discord.Embed(
+                        title="✏️ Edit Stat",
+                        description=f"**{STAT_NAMES[stat_name]}**\n\n"
+                                   f"Current value: **{int(current_val):,}**\n\n"
+                                   f"{error_message}\n\n"
+                                   f"**Requirements:**\n"
+                                   f"• Numbers only (0-999,999,999)\n"
+                                   f"• No spaces, text, or hyphens\n"
+                                   f"• Value must be >= 0 and <= 999,999,999\n\n"
+                                   f"Please enter the new value for this stat.\n"
+                                   f"Type `cancel` to cancel.",
+                        color=discord.Color.red()
                     )
+                    await message.channel.send(embed=embed)
                     return True
                 
-                new_value = int(numbers[0])
                 stat_name = session['editing_stat']
                 
                 # Update the stat in the editing stats dict
@@ -277,9 +394,6 @@ async def handle_dm_message(message: discord.Message, bot):
                 
                 return True
                 
-        except ValueError:
-            await message.channel.send("❌ Please enter a valid number.")
-            return True
         except Exception as e:
             await message.channel.send(f"❌ Error processing edit: {str(e)}")
             return True
@@ -325,10 +439,16 @@ async def start_manual_entry_flow(channel: discord.DMChannel, user_id: int, war_
         description=f"**{STAT_NAMES[STAT_ORDER[0]]}**\n\n"
                    f"I'll ask you for each stat one by one.\n"
                    f"Please enter the value for this stat.\n\n"
+                   f"**Requirements:**\n"
+                   f"• Numbers only (0-999,999,999)\n"
+                   f"• No spaces, text, or hyphens\n"
+                   f"• Value must be >= 0 and <= 999,999,999\n\n"
                    f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
         color=discord.Color.blue()
     )
     await channel.send(embed=embed)
+    # Reset rate limit when new prompt is sent
+    reset_skip_rate_limit(user_id)
 
 
 async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int, war_number: int, current_stats: Dict, show_current: bool = False):
@@ -374,11 +494,17 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
                     title="✏️ Edit Stat",
                     description=f"**{STAT_NAMES[stat_name]}**\n\n"
                                f"Current value: **{int(current_val):,}**\n\n"
-                               f"Please enter the new value for this stat.\n"
+                               f"Please enter the new value for this stat.\n\n"
+                               f"**Requirements:**\n"
+                               f"• Numbers only (0-999,999,999)\n"
+                               f"• No spaces, text, or hyphens\n"
+                               f"• Value must be >= 0 and <= 999,999,999\n\n"
                                f"Type `cancel` to cancel.",
                     color=discord.Color.blue()
                 )
                 await interaction.channel.send(embed=embed)
+                # Reset rate limit when new prompt is sent
+                reset_skip_rate_limit(user_id)
                 await interaction.followup.send("Enter the new value in the chat.", ephemeral=True)
             
             return button_callback

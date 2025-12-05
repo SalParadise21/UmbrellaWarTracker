@@ -90,4 +90,76 @@ async def setup_commands(bot):
                 )
         
         return choices[:25]  # Discord limit is 25 choices
+    
+    @bot.tree.command(name="view_wars", description="View all wars in the database")
+    async def view_wars(interaction: discord.Interaction):
+        """View all wars with their status"""
+        wars = await get_all_wars()
+        
+        if not wars:
+            await interaction.response.send_message("No wars found in the database.", ephemeral=True)
+            return
+        
+        # Create embed
+        embed = discord.Embed(
+            title="📋 All Wars",
+            description="List of all wars in the database (sorted by war number, highest to lowest)",
+            color=discord.Color.blue()
+        )
+        
+        # Build war list with status indicators
+        war_list = []
+        for war in wars:
+            war_number = war['war_number']
+            is_active = war.get('is_active', 0)
+            
+            # Use green circle for active, red circle for inactive
+            status_emoji = "🟢" if is_active else "🔴"
+            war_list.append(f"{status_emoji} War {war_number}")
+        
+        # Add as a field (Discord embed field value limit is 1024 characters)
+        war_text = "\n".join(war_list)
+        if len(war_text) > 1024:
+            # Split into chunks if too long
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            
+            for war_line in war_list:
+                line_length = len(war_line) + 1  # +1 for newline
+                if current_length + line_length > 1024:
+                    chunks.append("\n".join(current_chunk))
+                    current_chunk = [war_line]
+                    current_length = line_length
+                else:
+                    current_chunk.append(war_line)
+                    current_length += line_length
+            
+            if current_chunk:
+                chunks.append("\n".join(current_chunk))
+            
+            # Add first chunk as field
+            embed.add_field(
+                name="Wars",
+                value=chunks[0],
+                inline=False
+            )
+            
+            # Add remaining chunks as additional fields
+            for i, chunk in enumerate(chunks[1:], 1):
+                embed.add_field(
+                    name=f"Wars (continued {i+1})",
+                    value=chunk,
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="Wars",
+                value=war_text,
+                inline=False
+            )
+        
+        embed.timestamp = discord.utils.utcnow()
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 

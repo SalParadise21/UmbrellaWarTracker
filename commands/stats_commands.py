@@ -22,13 +22,26 @@ class StatEntryView(View):
     async def manual_button(self, interaction: discord.Interaction, button: Button):
         """Handle manual entry button click"""
         # Acknowledge the button click first
-        await interaction.response.defer(ephemeral=True)
-        
-        # Start manual entry flow (this sends the DM)
-        await start_manual_entry_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
+        await interaction.response.defer(ephemeral=False)
         
         # Send confirmation (this goes to the channel, not DM)
-        await interaction.followup.send("✅ Manual entry selected! Check your DMs - I'll guide you through each stat.", ephemeral=True)
+        await interaction.followup.send("✅ Manual entry selected! Check your DMs - I'll guide you through each stat.", ephemeral=False)
+
+        # Start manual entry flow (this sends the DM)
+        await start_manual_entry_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
+               
+        self.stop()
+    
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, row=1)
+    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+        """Handle cancel button click"""
+        
+        # Send cancellation message
+        await interaction.followup.send("❌ Stat entry cancelled.", ephemeral=False)
+
+        # Acknowledge the button click
+        await interaction.response.defer(ephemeral=False)
+        
         self.stop()
 
 

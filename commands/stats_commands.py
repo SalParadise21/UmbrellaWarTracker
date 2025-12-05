@@ -35,12 +35,11 @@ class StatEntryView(View):
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, row=1)
     async def cancel_button(self, interaction: discord.Interaction, button: Button):
         """Handle cancel button click"""
+        # Acknowledge the button click first
+        await interaction.response.defer(ephemeral=False)
         
         # Send cancellation message
         await interaction.followup.send("❌ Stat entry cancelled.", ephemeral=False)
-
-        # Acknowledge the button click
-        await interaction.response.defer(ephemeral=False)
         
         self.stop()
 

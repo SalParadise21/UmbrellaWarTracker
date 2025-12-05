@@ -25,6 +25,9 @@ async def setup_commands(bot):
         leaderboard_type: Optional[app_commands.Choice[str]] = None,
         war_number: Optional[int] = None
     ):
+        # Defer response immediately to avoid timeout
+        await interaction.response.defer()
+        
         # Determine leaderboard type
         war_id = None
         war_info = None
@@ -41,7 +44,7 @@ async def setup_commands(bot):
             if war_number:
                 war = await get_war_by_number(war_number)
                 if not war:
-                    await interaction.response.send_message(f"War {war_number} not found!", ephemeral=True)
+                    await interaction.followup.send(f"War {war_number} not found!", ephemeral=True)
                     return
                 war_id = war['id']
                 war_info = war
@@ -49,7 +52,7 @@ async def setup_commands(bot):
                 # Use active war
                 active_war = await get_active_war()
                 if not active_war:
-                    await interaction.response.send_message("No active war found! Please specify a war number or start a war.", ephemeral=True)
+                    await interaction.followup.send("No active war found! Please specify a war number or start a war.", ephemeral=True)
                     return
                 war_id = active_war['id']
                 war_info = active_war
@@ -70,11 +73,11 @@ async def setup_commands(bot):
         
         if not category_data:
             war_text = f" for War {war_info['war_number']}" if war_info else " (lifetime)"
-            await interaction.response.send_message(f"No stats found{war_text}.", ephemeral=True)
+            await interaction.followup.send(f"No stats found{war_text}.", ephemeral=True)
             return
         
         embed = await create_category_leaderboard_embed(category_data, war_info, bot, is_live=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
     
     @bot.tree.command(name="leaderboard_channel", description="Set the channel for automatic leaderboard updates")
     @app_commands.describe(channel="The channel to post leaderboard updates")

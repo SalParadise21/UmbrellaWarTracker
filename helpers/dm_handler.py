@@ -353,7 +353,7 @@ async def handle_dm_message(message: discord.Message, bot):
                     
                     @discord.ui.button(label="Yes, edit another", style=discord.ButtonStyle.green)
                     async def yes_button(self, interaction: discord.Interaction, button: Button):
-                        await interaction.response.defer(ephemeral=True)
+                        await interaction.response.defer(ephemeral=False)
                         # Reload stats from database to ensure we have latest values
                         from helpers.database import get_user_stats
                         updated_stats = await get_user_stats(self.user_id, self.war_id)
@@ -366,12 +366,12 @@ async def handle_dm_message(message: discord.Message, bot):
                             updated_stats,
                             show_current=True
                         )
-                        await interaction.followup.send("Select which stat you'd like to edit next.", ephemeral=True)
+                        await interaction.followup.send("Select which stat you'd like to edit next.", ephemeral=False)
                         self.stop()
                     
                     @discord.ui.button(label="No, I'm done", style=discord.ButtonStyle.red)
                     async def no_button(self, interaction: discord.Interaction, button: Button):
-                        await interaction.response.defer(ephemeral=True)
+                        await interaction.response.defer(ephemeral=False)
                         # Save all edits and end
                         if self.user_id in active_dm_sessions:
                             del active_dm_sessions[self.user_id]
@@ -382,7 +382,7 @@ async def handle_dm_message(message: discord.Message, bot):
                             "✅ All stats have been updated! Here's your final stats:",
                             embed=final_embed
                         )
-                        await interaction.followup.send("✅ Stats updated successfully!", ephemeral=True)
+                        await interaction.followup.send("✅ Stats updated successfully!", ephemeral=False)
                         self.stop()
                 
                 view = EditMoreView(user_id, session['war_id'], session.get('war_number', 'Unknown'), session['editing_stats'])
@@ -479,7 +479,7 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
         # Create a closure to capture the stat name
         def make_callback(stat_name):
             async def button_callback(interaction: discord.Interaction):
-                await interaction.response.defer(ephemeral=True)
+                await interaction.response.defer(ephemeral=False)
                 
                 # Update session
                 if user_id in active_dm_sessions:
@@ -505,7 +505,7 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
                 await interaction.channel.send(embed=embed)
                 # Reset rate limit when new prompt is sent
                 reset_skip_rate_limit(user_id)
-                await interaction.followup.send("Enter the new value in the chat.", ephemeral=True)
+                await interaction.followup.send("Enter the new value in the chat.", ephemeral=False)
             
             return button_callback
         

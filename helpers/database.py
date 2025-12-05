@@ -382,6 +382,113 @@ async def get_leaderboard(war_id: Optional[int] = None, limit: int = 10) -> List
                 return [dict(row) for row in rows]
 
 
+async def get_leaderboard_by_category(stat_name: str, war_id: Optional[int] = None, limit: int = 5) -> List[Dict]:
+    """Get leaderboard for a specific stat category"""
+    # Validate stat name
+    valid_stats = [
+        'enemy_player_damage', 'friendly_player_damage', 'enemy_structure_vehicle_damage',
+        'friendly_structure_vehicle_damage', 'friendly_construction', 'friendly_repairing',
+        'friendly_healing', 'friendly_revivals', 'vehicles_captured_by_enemy',
+        'vehicle_self_damage_neutral', 'vehicle_self_damage_colonial', 'vehicle_self_damage_warden',
+        'materials_submitted', 'materials_gathered', 'supply_value_delivered'
+    ]
+    
+    if stat_name not in valid_stats:
+        return []
+    
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if war_id:
+            async with db.execute(f"""
+                SELECT user_id, 
+                       SUM({stat_name}) as total_value
+                FROM user_stats
+                WHERE war_id = ?
+                GROUP BY user_id
+                HAVING total_value > 0
+                ORDER BY total_value DESC
+                LIMIT ?
+            """, (war_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+        else:
+            # Lifetime leaderboard
+            async with db.execute(f"""
+                SELECT user_id,
+                       SUM({stat_name}) as total_value
+                FROM user_stats
+                GROUP BY user_id
+                HAVING total_value > 0
+                ORDER BY total_value DESC
+                LIMIT ?
+            """, (limit,)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+
+async def get_user_rank(stat_name: str, user_id: int, war_id: Optional[int] = None) -> Optional[int]:
+    """Get user's rank in a specific stat category (1-based, None if no stats)"""
+    # Validate stat name
+    valid_stats = [
+        'enemy_player_damage', 'friendly_player_damage', 'enemy_structure_vehicle_damage',
+        'friendly_structure_vehicle_damage', 'friendly_construction', 'friendly_repairing',
+        'friendly_healing', 'friendly_revivals', 'vehicles_captured_by_enemy',
+        'vehicle_self_damage_neutral', 'vehicle_self_damage_colonial', 'vehicle_self_damage_warden',
+        'materials_submitted', 'materials_gathered', 'supply_value_delivered'
+    ]
+    
+    if stat_name not in valid_stats:
+        return None
+    
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        
+        # First, get the user's value
+        if war_id:
+            async with db.execute(f"""
+                SELECT SUM({stat_name}) as user_value
+                FROM user_stats
+                WHERE user_id = ? AND war_id = ?
+            """, (user_id, war_id)) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row['user_value'] or row['user_value'] == 0:
+                    return None
+                user_value = row['user_value']
+        else:
+            async with db.execute(f"""
+                SELECT SUM({stat_name}) as user_value
+                FROM user_stats
+                WHERE user_id = ?
+            """, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row['user_value'] or row['user_value'] == 0:
+                    return None
+                user_value = row['user_value']
+        
+        # Count how many users have a higher value
+        if war_id:
+            async with db.execute(f"""
+                SELECT COUNT(DISTINCT user_id) as rank
+                FROM user_stats
+                WHERE war_id = ?
+                GROUP BY user_id
+                HAVING SUM({stat_name}) > ?
+            """, (war_id, user_value)) as cursor:
+                row = await cursor.fetchone()
+                rank = (row['rank'] if row else 0) + 1
+        else:
+            async with db.execute(f"""
+                SELECT COUNT(DISTINCT user_id) as rank
+                FROM user_stats
+                GROUP BY user_id
+                HAVING SUM({stat_name}) > ?
+            """, (user_value,)) as cursor:
+                row = await cursor.fetchone()
+                rank = (row['rank'] if row else 0) + 1
+        
+        return rank
+
+
 async def get_setting(key: str) -> Optional[str]:
     """Get a setting value"""
     async with aiosqlite.connect(DATABASE_PATH) as db:

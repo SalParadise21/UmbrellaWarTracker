@@ -4,7 +4,7 @@ from discord import app_commands
 from discord.ui import View, Button
 from typing import Optional
 
-from helpers.database import get_active_war, get_user_stats, get_war_by_number
+from helpers.database import get_active_war, get_user_stats, get_war_by_number, get_user_rank
 from helpers.dm_handler import start_manual_entry_flow, start_edit_flow
 from helpers.embed_helper import create_stats_embed
 
@@ -167,6 +167,7 @@ async def setup_commands(bot):
     )
     async def stats_view(interaction: discord.Interaction, user: Optional[discord.User] = None, war_number: Optional[int] = None):
         from helpers import embed_helper
+        from helpers.dm_handler import STAT_ORDER
         
         target_user = user or interaction.user
         
@@ -195,6 +196,12 @@ async def setup_commands(bot):
             )
             return
         
-        embed = create_stats_embed(target_user, stats, war_info)
+        # Calculate ranks for each stat category
+        ranks = {}
+        for stat_name in STAT_ORDER:
+            rank = await get_user_rank(stat_name, target_user.id, war_id)
+            ranks[stat_name] = rank
+        
+        embed = create_stats_embed(target_user, stats, war_info, ranks)
         await interaction.response.send_message(embed=embed)
 

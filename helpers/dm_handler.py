@@ -181,19 +181,82 @@ async def handle_dm_message(message: discord.Message, bot):
                     extracted_stats, error_message = extract_stats_from_image(image_bytes)
                     
                     if not extracted_stats or len(extracted_stats) == 0:
-                        # Provide more detailed error message
-                        error_text = "❌ Could not extract stats from the screenshot.\n\n"
+                        # Create error embed with buttons
+                        error_description = "Could not extract stats from the screenshot.\n\n"
                         if error_message:
-                            error_text += f"**Details:** {error_message}\n\n"
-                        error_text += (
-                            "**Please try:**\n"
-                            "• Make sure the screenshot is clear and readable\n"
-                            "• Ensure the stats are visible in the image\n"
-                            "• Try taking a new screenshot with better lighting\n"
-                            "• Try manual entry instead by typing `cancel` and starting over"
+                            # Truncate error message if too long
+                            error_preview = error_message[:200] + "..." if len(error_message) > 200 else error_message
+                            error_description += f"**Details:** {error_preview}\n\n"
+                        error_description += (
+                            "**What would you like to do?**\n\n"
+                            "• **Manual Entry**: Enter stats manually one by one\n"
+                            "• **Re-run Submit Screenshot**: Try submitting a new screenshot\n"
+                            "• **Cancel**: Cancel stat entry"
                         )
-                        await message.channel.send(error_text)
-                        del active_dm_sessions[user_id]
+                        
+                        embed = discord.Embed(
+                            title="❌ Could Not Extract Stats",
+                            description=error_description,
+                            color=discord.Color.red()
+                        )
+                        
+                        # Create view with buttons
+                        from discord.ui import View, Button
+                        
+                        class ExtractionErrorView(View):
+                            def __init__(self, user_id, war_id, war_number, dm_channel):
+                                super().__init__(timeout=300)
+                                self.user_id = user_id
+                                self.war_id = war_id
+                                self.war_number = war_number
+                                self.dm_channel = dm_channel
+                            
+                            @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.green)
+                            async def manual_button(self, interaction: discord.Interaction, button: Button):
+                                await interaction.response.defer(ephemeral=False)
+                                
+                                # Start manual entry flow
+                                await start_manual_entry_flow(
+                                    interaction.channel,
+                                    self.user_id,
+                                    self.war_id,
+                                    self.war_number
+                                )
+                                
+                                await interaction.followup.send("Starting manual entry flow.", ephemeral=False)
+                                self.stop()
+                            
+                            @discord.ui.button(label="📷 Re-run Submit Screenshot", style=discord.ButtonStyle.blurple)
+                            async def rerun_button(self, interaction: discord.Interaction, button: Button):
+                                await interaction.response.defer(ephemeral=False)
+                                
+                                # Restart screenshot flow
+                                await start_screenshot_flow(
+                                    interaction.channel,
+                                    self.user_id,
+                                    self.war_id,
+                                    self.war_number
+                                )
+                                
+                                await interaction.followup.send("Please submit a new screenshot.", ephemeral=False)
+                                self.stop()
+                            
+                            @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+                            async def cancel_button(self, interaction: discord.Interaction, button: Button):
+                                await interaction.response.defer(ephemeral=False)
+                                
+                                # Clean up session
+                                if self.user_id in active_dm_sessions:
+                                    del active_dm_sessions[self.user_id]
+                                reset_skip_rate_limit(self.user_id)
+                                
+                                await interaction.channel.send("❌ Stat entry cancelled.")
+                                await interaction.followup.send("Cancelled.", ephemeral=False)
+                                self.stop()
+                        
+                        view = ExtractionErrorView(user_id, session['war_id'], session.get('war_number', 'Unknown'), message.channel)
+                        await message.channel.send(embed=embed, view=view)
+                        # Don't delete the session here - let the buttons handle it
                         return True
                     
                     # Initialize all stats to 0, then update with extracted values

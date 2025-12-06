@@ -68,8 +68,10 @@ async def init_database():
 
 async def init_default_settings():
     """Initialize default settings if they don't exist"""
-    # No default settings to initialize currently
-    pass
+    # Initialize screenshot processing setting (default: enabled)
+    screenshot_enabled = await get_setting("screenshot_processing_enabled")
+    if screenshot_enabled is None:
+        await set_setting("screenshot_processing_enabled", "true")
 
 
 async def migrate_database():

@@ -45,9 +45,90 @@ async def setup_commands(bot):
                 inline=False
             )
         
+        # Screenshot processing setting
+        screenshot_enabled = await get_setting("screenshot_processing_enabled")
+        screenshot_enabled = screenshot_enabled != "false"  # Default to True if not set
+        status_text = "✅ Enabled" if screenshot_enabled else "❌ Disabled"
+        embed.add_field(
+            name="📷 Screenshot Processing",
+            value=f"{status_text}\n\nWhen enabled, users can submit screenshots for automatic stat extraction.\n\nUse the buttons below to toggle this setting.",
+            inline=False
+        )
+        
         embed.timestamp = discord.utils.utcnow()
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Create view with toggle buttons
+        from discord.ui import View, Button
+        
+        class SettingsView(View):
+            def __init__(self, bot):
+                super().__init__(timeout=300)
+                self.bot = bot
+            
+            @discord.ui.button(label="✅ Enable Screenshot Processing", style=discord.ButtonStyle.green, row=0)
+            async def enable_button(self, interaction: discord.Interaction, button: Button):
+                await interaction.response.defer(ephemeral=True)
+                await set_setting("screenshot_processing_enabled", "true")
+                await interaction.followup.send("✅ Screenshot processing has been enabled!", ephemeral=True)
+                # Refresh the settings view
+                await self.refresh_settings(interaction)
+            
+            @discord.ui.button(label="❌ Disable Screenshot Processing", style=discord.ButtonStyle.red, row=0)
+            async def disable_button(self, interaction: discord.Interaction, button: Button):
+                await interaction.response.defer(ephemeral=True)
+                await set_setting("screenshot_processing_enabled", "false")
+                await interaction.followup.send("❌ Screenshot processing has been disabled!", ephemeral=True)
+                # Refresh the settings view
+                await self.refresh_settings(interaction)
+            
+            async def refresh_settings(self, interaction: discord.Interaction):
+                """Refresh the settings embed"""
+                # Get current settings
+                leaderboard_channel_id = await get_setting("leaderboard_channel_id")
+                leaderboard_channel = None
+                if leaderboard_channel_id:
+                    try:
+                        leaderboard_channel = self.bot.get_channel(int(leaderboard_channel_id))
+                    except:
+                        pass
+                
+                # Create embed with current settings
+                embed = discord.Embed(
+                    title="⚙️ Bot Settings",
+                    description="Current bot configuration settings.",
+                    color=discord.Color.blue()
+                )
+                
+                # Leaderboard channel
+                if leaderboard_channel:
+                    embed.add_field(
+                        name="📊 Leaderboard Channel",
+                        value=f"{leaderboard_channel.mention}\n\nAutomatic leaderboard updates are posted here.",
+                        inline=False
+                    )
+                else:
+                    embed.add_field(
+                        name="📊 Leaderboard Channel",
+                        value="Not set\n\nUse `/leaderboard_channel` to set a channel for automatic updates.",
+                        inline=False
+                    )
+                
+                # Screenshot processing setting
+                screenshot_enabled = await get_setting("screenshot_processing_enabled")
+                screenshot_enabled = screenshot_enabled != "false"  # Default to True if not set
+                status_text = "✅ Enabled" if screenshot_enabled else "❌ Disabled"
+                embed.add_field(
+                    name="📷 Screenshot Processing",
+                    value=f"{status_text}\n\nWhen enabled, users can submit screenshots for automatic stat extraction.\n\nUse the buttons below to toggle this setting.",
+                    inline=False
+                )
+                
+                embed.timestamp = discord.utils.utcnow()
+                
+                await interaction.edit_original_response(embed=embed, view=self)
+        
+        view = SettingsView(bot)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     @bot.tree.command(name="export_database", description="Export database to CSV file (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)

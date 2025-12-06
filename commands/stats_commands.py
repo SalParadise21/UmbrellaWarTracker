@@ -4,58 +4,100 @@ from discord import app_commands
 from discord.ui import View, Button
 from typing import Optional
 
-from helpers.database import get_active_war, get_user_stats, get_war_by_number, get_user_rank
+from helpers.database import get_active_war, get_user_stats, get_war_by_number, get_user_rank, get_setting
 from helpers.dm_handler import start_manual_entry_flow, start_edit_flow, start_screenshot_flow
 from helpers.embed_helper import create_stats_embed
 
 
-class StatEntryView(View):
-    """View with button for manual entry"""
-    def __init__(self, bot, war_id, war_number, dm_channel):
-        super().__init__(timeout=300)  # 5 minute timeout
-        self.bot = bot
-        self.war_id = war_id
-        self.war_number = war_number
-        self.dm_channel = dm_channel
+def create_stat_entry_view(bot, war_id, war_number, dm_channel, screenshot_enabled: bool):
+    """Create a StatEntryView with conditional screenshot button"""
     
-    @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.blurple)
-    async def manual_button(self, interaction: discord.Interaction, button: Button):
-        """Handle manual entry button click"""
-        # Acknowledge the button click first
-        await interaction.response.defer(ephemeral=False)
-        
-        # Send confirmation (this goes to the channel, not DM)
-        await interaction.followup.send("✅ Manual entry selected! Check your DMs - I'll guide you through each stat.", ephemeral=False)
+    if screenshot_enabled:
+        # View with both manual entry and screenshot buttons
+        class StatEntryView(View):
+            """View with button for manual entry and screenshot"""
+            def __init__(self, bot, war_id, war_number, dm_channel):
+                super().__init__(timeout=300)  # 5 minute timeout
+                self.bot = bot
+                self.war_id = war_id
+                self.war_number = war_number
+                self.dm_channel = dm_channel
+            
+            @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.blurple)
+            async def manual_button(self, interaction: discord.Interaction, button: Button):
+                """Handle manual entry button click"""
+                # Acknowledge the button click first
+                await interaction.response.defer(ephemeral=False)
+                
+                # Send confirmation (this goes to the channel, not DM)
+                await interaction.followup.send("✅ Manual entry selected! Check your DMs - I'll guide you through each stat.", ephemeral=False)
 
-        # Start manual entry flow (this sends the DM)
-        await start_manual_entry_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
-               
-        self.stop()
-    
-    @discord.ui.button(label="📷 Submit Screenshot", style=discord.ButtonStyle.green)
-    async def screenshot_button(self, interaction: discord.Interaction, button: Button):
-        """Handle screenshot submission button click"""
-        # Acknowledge the button click first
-        await interaction.response.defer(ephemeral=False)
-        
-        # Send confirmation (this goes to the channel, not DM)
-        await interaction.followup.send("✅ Screenshot submission selected! Check your DMs - I'll process your screenshot.", ephemeral=False)
+                # Start manual entry flow (this sends the DM)
+                await start_manual_entry_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
+                       
+                self.stop()
+            
+            @discord.ui.button(label="📷 Submit Screenshot", style=discord.ButtonStyle.green)
+            async def screenshot_button(self, interaction: discord.Interaction, button: Button):
+                """Handle screenshot submission button click"""
+                # Acknowledge the button click first
+                await interaction.response.defer(ephemeral=False)
+                
+                # Send confirmation (this goes to the channel, not DM)
+                await interaction.followup.send("✅ Screenshot submission selected! Check your DMs - I'll process your screenshot.", ephemeral=False)
 
-        # Start screenshot flow (this sends the DM)
-        await start_screenshot_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
-               
-        self.stop()
+                # Start screenshot flow (this sends the DM)
+                await start_screenshot_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
+                       
+                self.stop()
+            
+            @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, row=1)
+            async def cancel_button(self, interaction: discord.Interaction, button: Button):
+                """Handle cancel button click"""
+                # Acknowledge the button click first
+                await interaction.response.defer(ephemeral=False)
+                
+                # Send cancellation message
+                await interaction.followup.send("❌ Stat entry cancelled.", ephemeral=False)
+                
+                self.stop()
+    else:
+        # View with only manual entry button (no screenshot)
+        class StatEntryView(View):
+            """View with button for manual entry only"""
+            def __init__(self, bot, war_id, war_number, dm_channel):
+                super().__init__(timeout=300)  # 5 minute timeout
+                self.bot = bot
+                self.war_id = war_id
+                self.war_number = war_number
+                self.dm_channel = dm_channel
+            
+            @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.blurple)
+            async def manual_button(self, interaction: discord.Interaction, button: Button):
+                """Handle manual entry button click"""
+                # Acknowledge the button click first
+                await interaction.response.defer(ephemeral=False)
+                
+                # Send confirmation (this goes to the channel, not DM)
+                await interaction.followup.send("✅ Manual entry selected! Check your DMs - I'll guide you through each stat.", ephemeral=False)
+
+                # Start manual entry flow (this sends the DM)
+                await start_manual_entry_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
+                       
+                self.stop()
+            
+            @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, row=1)
+            async def cancel_button(self, interaction: discord.Interaction, button: Button):
+                """Handle cancel button click"""
+                # Acknowledge the button click first
+                await interaction.response.defer(ephemeral=False)
+                
+                # Send cancellation message
+                await interaction.followup.send("❌ Stat entry cancelled.", ephemeral=False)
+                
+                self.stop()
     
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, row=1)
-    async def cancel_button(self, interaction: discord.Interaction, button: Button):
-        """Handle cancel button click"""
-        # Acknowledge the button click first
-        await interaction.response.defer(ephemeral=False)
-        
-        # Send cancellation message
-        await interaction.followup.send("❌ Stat entry cancelled.", ephemeral=False)
-        
-        self.stop()
+    return StatEntryView(bot, war_id, war_number, dm_channel)
 
 
 # Track command executions to prevent duplicates
@@ -125,14 +167,26 @@ async def setup_commands(bot):
             # Mark that we're about to send a DM (do this before sending to prevent race conditions)
             _dm_sent_tracking.add(execution_key)
             
-            # Create view with manual entry button
-            view = StatEntryView(bot, active_war['id'], active_war['war_number'], dm_channel)
+            # Check if screenshot processing is enabled
+            from helpers.database import get_setting
+            screenshot_enabled_setting = await get_setting("screenshot_processing_enabled")
+            screenshot_enabled = screenshot_enabled_setting != "false"  # Default to True if not set
+            
+            # Create view with conditional screenshot button
+            view = create_stat_entry_view(bot, active_war['id'], active_war['war_number'], dm_channel, screenshot_enabled)
+            
+            # Update embed description based on available options
+            if screenshot_enabled:
+                description = f"Entering stats for War {active_war['war_number']}\n\n" \
+                            "How would you like to submit your stats?\n\n" \
+                            "Click a button below to choose:"
+            else:
+                description = f"Entering stats for War {active_war['war_number']}\n\n" \
+                            "Click the button below to start manual entry:"
             
             embed = discord.Embed(
                 title="📊 Stat Entry",
-                description=f"Entering stats for War {active_war['war_number']}\n\n"
-                           "How would you like to submit your stats?\n\n"
-                           "Click a button below to choose:",
+                description=description,
                 color=discord.Color.blue()
             )
             

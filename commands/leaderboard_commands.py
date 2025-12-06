@@ -3,7 +3,7 @@ import discord
 from discord import app_commands
 from typing import Optional
 
-from helpers.database import get_leaderboard, get_leaderboard_by_category, get_war_by_number, get_active_war, set_setting, set_leaderboard_message_id
+from helpers.database import get_leaderboard, get_leaderboard_by_category, get_war_by_number, get_active_war, set_leaderboard_message_id
 from helpers.embed_helper import create_leaderboard_embed, create_category_leaderboard_embed
 from helpers.dm_handler import STAT_ORDER
 
@@ -79,41 +79,3 @@ async def setup_commands(bot):
         embed = await create_category_leaderboard_embed(category_data, war_info, bot, is_live=False)
         await interaction.followup.send(embed=embed)
     
-    @bot.tree.command(name="leaderboard_channel", description="Set the channel for automatic leaderboard updates")
-    @app_commands.describe(channel="The channel to post leaderboard updates")
-    async def leaderboard_channel(interaction: discord.Interaction, channel: discord.TextChannel):
-        await set_setting("leaderboard_channel_id", str(channel.id))
-        
-        # Trigger immediate leaderboard update for both active war and lifetime
-        active_war = await get_active_war()
-        
-        # Active war leaderboard
-        if active_war:
-            category_data = {}
-            for stat_name in STAT_ORDER:
-                leaderboard_data = await get_leaderboard_by_category(stat_name, active_war['id'], limit=5)
-                if leaderboard_data:
-                    category_data[stat_name] = leaderboard_data
-            
-            if category_data:
-                embed = await create_category_leaderboard_embed(category_data, active_war, bot, is_live=True)
-                message = await channel.send(embed=embed)
-                await set_leaderboard_message_id(active_war['id'], message.id)
-        
-        # Lifetime leaderboard
-        lifetime_category_data = {}
-        for stat_name in STAT_ORDER:
-            leaderboard_data = await get_leaderboard_by_category(stat_name, None, limit=5)
-            if leaderboard_data:
-                lifetime_category_data[stat_name] = leaderboard_data
-        
-        if lifetime_category_data:
-            lifetime_embed = await create_category_leaderboard_embed(lifetime_category_data, None, bot, is_live=True)
-            lifetime_message = await channel.send(embed=lifetime_embed)
-            await set_setting("lifetime_leaderboard_message_id", str(lifetime_message.id))
-        
-        await interaction.response.send_message(
-            f"Leaderboards will now update in {channel.mention}",
-            ephemeral=True
-        )
-

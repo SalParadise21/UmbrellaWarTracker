@@ -204,7 +204,6 @@ def create_manual_entry_view(user_id: int, channel, stat_name: str, stat_index: 
                 # Create new view for next stat
                 next_view = create_manual_entry_view(self.user_id, self.channel, next_stat, session['stat_index'], len(STAT_ORDER))
                 await interaction.channel.send(embed=embed, view=next_view)
-                await interaction.followup.send("Skipped. Enter the value for the next stat.", ephemeral=False)
                 reset_skip_rate_limit(self.user_id)
                 self.stop()
         
@@ -218,7 +217,6 @@ def create_manual_entry_view(user_id: int, channel, stat_name: str, stat_index: 
             reset_skip_rate_limit(self.user_id)
             
             await interaction.channel.send("❌ Stat entry cancelled.")
-            await interaction.followup.send("Cancelled.", ephemeral=False)
             self.stop()
     
     return ManualEntryView(user_id, channel, stat_name, stat_index, total_stats)
@@ -316,7 +314,6 @@ async def handle_dm_message(message: discord.Message, bot):
                                     self.war_number
                                 )
                                 
-                                await interaction.followup.send("Starting manual entry flow.", ephemeral=False)
                                 self.stop()
                             
                             @discord.ui.button(label="📷 Re-run Submit Screenshot", style=discord.ButtonStyle.blurple)
@@ -331,7 +328,6 @@ async def handle_dm_message(message: discord.Message, bot):
                                     self.war_number
                                 )
                                 
-                                await interaction.followup.send("Please submit a new screenshot.", ephemeral=False)
                                 self.stop()
                             
                             @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
@@ -344,7 +340,6 @@ async def handle_dm_message(message: discord.Message, bot):
                                 reset_skip_rate_limit(self.user_id)
                                 
                                 await interaction.channel.send("❌ Stat entry cancelled.")
-                                await interaction.followup.send("Cancelled.", ephemeral=False)
                                 self.stop()
                         
                         view = ExtractionErrorView(user_id, session['war_id'], session.get('war_number', 'Unknown'), message.channel)
@@ -401,7 +396,6 @@ async def handle_dm_message(message: discord.Message, bot):
                                 "✅ Stats have been saved from your screenshot!",
                                 embed=final_embed
                             )
-                            await interaction.followup.send("✅ Stats saved successfully!", ephemeral=False)
                             self.stop()
                         
                         @discord.ui.button(label="❌ No", style=discord.ButtonStyle.red)
@@ -437,7 +431,6 @@ async def handle_dm_message(message: discord.Message, bot):
                                         self.war_number
                                     )
                                     
-                                    await interaction.followup.send("Please submit a new screenshot.", ephemeral=False)
                                     self.stop()
                                 
                                 @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.green)
@@ -452,7 +445,6 @@ async def handle_dm_message(message: discord.Message, bot):
                                         self.war_number
                                     )
                                     
-                                    await interaction.followup.send("Starting manual entry flow.", ephemeral=False)
                                     self.stop()
                                 
                                 @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
@@ -465,12 +457,10 @@ async def handle_dm_message(message: discord.Message, bot):
                                     reset_skip_rate_limit(self.user_id)
                                     
                                     await interaction.channel.send("❌ Stat entry cancelled.")
-                                    await interaction.followup.send("Cancelled.", ephemeral=False)
                                     self.stop()
                             
                             retry_view = RetryChoiceView(self.user_id, self.war_id, self.war_number, self.dm_channel)
                             await interaction.channel.send(embed=embed, view=retry_view)
-                            await interaction.followup.send("Please choose an option.", ephemeral=False)
                             self.stop()
                     
                     view = ScreenshotConfirmView(user_id, session['war_id'], session.get('war_number', 'Unknown'), all_stats, message.channel)
@@ -933,7 +923,6 @@ async def start_screenshot_flow(channel: discord.DMChannel, user_id: int, war_id
             reset_skip_rate_limit(self.user_id)
             
             await interaction.channel.send("❌ Stat entry cancelled.")
-            await interaction.followup.send("Cancelled.", ephemeral=False)
             self.stop()
     
     view = ScreenshotCancelView(user_id)

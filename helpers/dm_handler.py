@@ -178,24 +178,23 @@ async def handle_dm_message(message: discord.Message, bot):
                         del active_dm_sessions[user_id]
                         return True
                     
-                    extracted_stats = extract_stats_from_image(image_bytes)
+                    extracted_stats, error_message = extract_stats_from_image(image_bytes)
                     
                     if not extracted_stats or len(extracted_stats) == 0:
-                        await message.channel.send(
-                            "❌ Could not extract stats from the screenshot. Please try:\n"
+                        # Provide more detailed error message
+                        error_text = "❌ Could not extract stats from the screenshot.\n\n"
+                        if error_message:
+                            error_text += f"**Details:** {error_message}\n\n"
+                        error_text += (
+                            "**Please try:**\n"
                             "• Make sure the screenshot is clear and readable\n"
                             "• Ensure the stats are visible in the image\n"
+                            "• Try taking a new screenshot with better lighting\n"
                             "• Try manual entry instead by typing `cancel` and starting over"
                         )
+                        await message.channel.send(error_text)
                         del active_dm_sessions[user_id]
                         return True
-                    
-                    # Show extracted stats and ask for confirmation
-                    stats_text = "\n".join([
-                        f"**{STAT_NAMES.get(stat, stat)}**: {int(value):,}"
-                        for stat, value in extracted_stats.items()
-                        if stat in STAT_ORDER
-                    ])
                     
                     # Initialize all stats to 0, then update with extracted values
                     all_stats = {stat: 0 for stat in STAT_ORDER}
@@ -207,26 +206,25 @@ async def handle_dm_message(message: discord.Message, bot):
                     session['extracted_stats'] = all_stats
                     session['waiting_for_confirmation'] = True
                     
-                    embed = discord.Embed(
-                        title="📷 Extracted Stats",
-                        description=f"I found the following stats in your screenshot:\n\n{stats_text}\n\n"
-                                   f"Would you like to use these values?",
-                        color=discord.Color.green()
-                    )
+                    # Create embed with all extracted stats
+                    embed = create_stat_update_embed(all_stats)
+                    embed.title = "📷 Extracted Stats from Screenshot"
+                    embed.description = "Please review the extracted stats below. Are these values correct?"
                     
-                    # Create confirmation view
+                    # Create confirmation view with Yes/No buttons
                     from discord.ui import View, Button
                     
                     class ScreenshotConfirmView(View):
-                        def __init__(self, user_id, war_id, war_number, extracted_stats):
+                        def __init__(self, user_id, war_id, war_number, extracted_stats, dm_channel):
                             super().__init__(timeout=300)
                             self.user_id = user_id
                             self.war_id = war_id
                             self.war_number = war_number
                             self.extracted_stats = extracted_stats
+                            self.dm_channel = dm_channel
                         
-                        @discord.ui.button(label="✅ Confirm & Save", style=discord.ButtonStyle.green)
-                        async def confirm_button(self, interaction: discord.Interaction, button: Button):
+                        @discord.ui.button(label="✅ Yes", style=discord.ButtonStyle.green)
+                        async def yes_button(self, interaction: discord.Interaction, button: Button):
                             await interaction.response.defer(ephemeral=False)
                             
                             # Save the stats
@@ -250,38 +248,76 @@ async def handle_dm_message(message: discord.Message, bot):
                             await interaction.followup.send("✅ Stats saved successfully!", ephemeral=False)
                             self.stop()
                         
-                        @discord.ui.button(label="✏️ Edit Before Saving", style=discord.ButtonStyle.blurple)
-                        async def edit_button(self, interaction: discord.Interaction, button: Button):
+                        @discord.ui.button(label="❌ No", style=discord.ButtonStyle.red)
+                        async def no_button(self, interaction: discord.Interaction, button: Button):
                             await interaction.response.defer(ephemeral=False)
                             
-                            # Switch to edit mode with extracted stats
-                            # start_edit_flow will create a new session, so we don't need to manually update it
-                            await start_edit_flow(
-                                interaction.channel,
-                                self.user_id,
-                                self.war_id,
-                                self.war_number,
-                                self.extracted_stats,
-                                show_current=True
+                            # Ask if they want to rerun image processing or do manual entry
+                            embed = discord.Embed(
+                                title="📷 Stats Not Correct",
+                                description="What would you like to do?\n\n"
+                                           "• **Rerun Image Processing**: Submit a new screenshot\n"
+                                           "• **Manual Entry**: Enter stats manually one by one",
+                                color=discord.Color.orange()
                             )
                             
-                            await interaction.followup.send("You can now edit the extracted stats.", ephemeral=False)
-                            self.stop()
-                        
-                        @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
-                        async def cancel_button(self, interaction: discord.Interaction, button: Button):
-                            await interaction.response.defer(ephemeral=False)
+                            class RetryChoiceView(View):
+                                def __init__(self, user_id, war_id, war_number, dm_channel):
+                                    super().__init__(timeout=300)
+                                    self.user_id = user_id
+                                    self.war_id = war_id
+                                    self.war_number = war_number
+                                    self.dm_channel = dm_channel
+                                
+                                @discord.ui.button(label="📷 Rerun Image Processing", style=discord.ButtonStyle.blurple)
+                                async def rerun_button(self, interaction: discord.Interaction, button: Button):
+                                    await interaction.response.defer(ephemeral=False)
+                                    
+                                    # Restart screenshot flow
+                                    await start_screenshot_flow(
+                                        interaction.channel,
+                                        self.user_id,
+                                        self.war_id,
+                                        self.war_number
+                                    )
+                                    
+                                    await interaction.followup.send("Please submit a new screenshot.", ephemeral=False)
+                                    self.stop()
+                                
+                                @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.green)
+                                async def manual_button(self, interaction: discord.Interaction, button: Button):
+                                    await interaction.response.defer(ephemeral=False)
+                                    
+                                    # Start manual entry flow
+                                    await start_manual_entry_flow(
+                                        interaction.channel,
+                                        self.user_id,
+                                        self.war_id,
+                                        self.war_number
+                                    )
+                                    
+                                    await interaction.followup.send("Starting manual entry flow.", ephemeral=False)
+                                    self.stop()
+                                
+                                @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+                                async def cancel_button(self, interaction: discord.Interaction, button: Button):
+                                    await interaction.response.defer(ephemeral=False)
+                                    
+                                    # Clean up session
+                                    if self.user_id in active_dm_sessions:
+                                        del active_dm_sessions[self.user_id]
+                                    reset_skip_rate_limit(self.user_id)
+                                    
+                                    await interaction.channel.send("❌ Stat entry cancelled.")
+                                    await interaction.followup.send("Cancelled.", ephemeral=False)
+                                    self.stop()
                             
-                            # Clean up session
-                            if self.user_id in active_dm_sessions:
-                                del active_dm_sessions[self.user_id]
-                            reset_skip_rate_limit(self.user_id)
-                            
-                            await interaction.channel.send("❌ Stat entry cancelled.")
-                            await interaction.followup.send("Cancelled.", ephemeral=False)
+                            retry_view = RetryChoiceView(self.user_id, self.war_id, self.war_number, self.dm_channel)
+                            await interaction.channel.send(embed=embed, view=retry_view)
+                            await interaction.followup.send("Please choose an option.", ephemeral=False)
                             self.stop()
                     
-                    view = ScreenshotConfirmView(user_id, session['war_id'], session.get('war_number', 'Unknown'), all_stats)
+                    view = ScreenshotConfirmView(user_id, session['war_id'], session.get('war_number', 'Unknown'), all_stats, message.channel)
                     await message.channel.send(embed=embed, view=view)
                     return True
                 except Exception as e:

@@ -131,6 +131,99 @@ def reset_skip_rate_limit(user_id: int):
     skip_rate_limit.pop(user_id, None)
 
 
+def create_manual_entry_view(user_id: int, channel, stat_name: str, stat_index: int, total_stats: int):
+    """
+    Create a View with Skip and Cancel buttons for manual entry prompts
+    """
+    from discord.ui import View, Button
+    
+    class ManualEntryView(View):
+        def __init__(self, user_id, channel, stat_name, stat_index, total_stats):
+            super().__init__(timeout=300)
+            self.user_id = user_id
+            self.channel = channel
+            self.stat_name = stat_name
+            self.stat_index = stat_index
+            self.total_stats = total_stats
+        
+        @discord.ui.button(label="⏭️ Skip", style=discord.ButtonStyle.secondary)
+        async def skip_button(self, interaction: discord.Interaction, button: Button):
+            await interaction.response.defer(ephemeral=False)
+            
+            # Check if user still has an active session
+            if self.user_id not in active_dm_sessions:
+                await interaction.followup.send("Session expired. Please start over.", ephemeral=False)
+                self.stop()
+                return
+            
+            session = active_dm_sessions[self.user_id]
+            
+            # Use 0 for skipped stat
+            if 'stats' not in session:
+                session['stats'] = {}
+            session['stats'][session['current_stat']] = 0
+            
+            # Move to next stat
+            session['stat_index'] += 1
+            
+            # Check if we're done
+            if session['stat_index'] >= len(STAT_ORDER):
+                # All stats collected, save them
+                await update_user_stats(
+                    self.user_id,
+                    session['war_id'],
+                    **session['stats']
+                )
+                del active_dm_sessions[self.user_id]
+                reset_skip_rate_limit(self.user_id)
+                
+                embed = create_stat_update_embed(session['stats'])
+                await interaction.channel.send(
+                    "✅ All stats have been recorded!",
+                    embed=embed
+                )
+                await interaction.followup.send("✅ Stats saved!", ephemeral=False)
+                self.stop()
+            else:
+                # Ask for next stat
+                next_stat = STAT_ORDER[session['stat_index']]
+                session['current_stat'] = next_stat
+                
+                progress = f"({session['stat_index']}/{len(STAT_ORDER)})"
+                embed = discord.Embed(
+                    title=f"📊 Stat Entry {progress}",
+                    description=f"**{STAT_NAMES[next_stat]}**\n\n"
+                               f"Please enter the value for this stat.\n\n"
+                               f"**Requirements:**\n"
+                               f"• Numbers only (0-999,999,999)\n"
+                               f"• No spaces, text, or hyphens\n"
+                               f"• Value must be >= 0 and <= 999,999,999",
+                    color=discord.Color.blue()
+                )
+                
+                # Create new view for next stat
+                next_view = create_manual_entry_view(self.user_id, self.channel, next_stat, session['stat_index'], len(STAT_ORDER))
+                await interaction.channel.send(embed=embed, view=next_view)
+                await interaction.followup.send("Skipped. Enter the value for the next stat.", ephemeral=False)
+                reset_skip_rate_limit(self.user_id)
+                self.stop()
+        
+        @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+        async def cancel_button(self, interaction: discord.Interaction, button: Button):
+            await interaction.response.defer(ephemeral=False)
+            
+            # Clean up session
+            if self.user_id in active_dm_sessions:
+                del active_dm_sessions[self.user_id]
+            reset_skip_rate_limit(self.user_id)
+            
+            await interaction.channel.send("❌ Stat entry cancelled.")
+            await interaction.followup.send("Cancelled.", ephemeral=False)
+            self.stop()
+    
+    return ManualEntryView(user_id, channel, stat_name, stat_index, total_stats)
+
+
 async def handle_dm_message(message: discord.Message, bot):
     """Handle incoming DM messages for stat entry"""
     user_id = message.author.id
@@ -448,11 +541,11 @@ async def handle_dm_message(message: discord.Message, bot):
                            f"**Requirements:**\n"
                            f"• Numbers only (0-999,999,999)\n"
                            f"• No spaces, text, or hyphens\n"
-                           f"• Value must be >= 0 and <= 999,999,999\n\n"
-                           f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
+                           f"• Value must be >= 0 and <= 999,999,999",
                 color=discord.Color.blue()
             )
-            await message.channel.send(embed=embed)
+            view = create_manual_entry_view(user_id, message.channel, next_stat, session['stat_index'], len(STAT_ORDER))
+            await message.channel.send(embed=embed, view=view)
             # Reset rate limit when new prompt is sent
             reset_skip_rate_limit(user_id)
             return True
@@ -476,11 +569,11 @@ async def handle_dm_message(message: discord.Message, bot):
                                f"**Requirements:**\n"
                                f"• Numbers only (0-999,999,999)\n"
                                f"• No spaces, text, or hyphens\n"
-                               f"• Value must be >= 0 and <= 999,999,999\n\n"
-                               f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
+                               f"• Value must be >= 0 and <= 999,999,999",
                     color=discord.Color.red()
                 )
-                await message.channel.send(embed=embed)
+                view = create_manual_entry_view(user_id, message.channel, session['current_stat'], session['stat_index'], len(STAT_ORDER))
+                await message.channel.send(embed=embed, view=view)
                 return True
             
             # Store the stat
@@ -521,11 +614,11 @@ async def handle_dm_message(message: discord.Message, bot):
                                f"**Requirements:**\n"
                                f"• Numbers only (0-999,999,999)\n"
                                f"• No spaces, text, or hyphens\n"
-                               f"• Value must be >= 0 and <= 999,999,999\n\n"
-                               f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
+                               f"• Value must be >= 0 and <= 999,999,999",
                     color=discord.Color.blue()
                 )
-                await message.channel.send(embed=embed)
+                view = create_manual_entry_view(user_id, message.channel, next_stat, session['stat_index'], len(STAT_ORDER))
+                await message.channel.send(embed=embed, view=view)
                 # Reset rate limit when new prompt is sent
                 reset_skip_rate_limit(user_id)
                 return True
@@ -697,11 +790,11 @@ async def start_manual_entry_flow(channel: discord.DMChannel, user_id: int, war_
                    f"**Requirements:**\n"
                    f"• Numbers only (0-999,999,999)\n"
                    f"• No spaces, text, or hyphens\n"
-                   f"• Value must be >= 0 and <= 999,999,999\n\n"
-                   f"Type `cancel` to cancel, or `skip` to skip this stat (use 0).",
+                   f"• Value must be >= 0 and <= 999,999,999",
         color=discord.Color.blue()
     )
-    await channel.send(embed=embed)
+    view = create_manual_entry_view(user_id, channel, STAT_ORDER[0], 0, len(STAT_ORDER))
+    await channel.send(embed=embed, view=view)
     # Reset rate limit when new prompt is sent
     reset_skip_rate_limit(user_id)
 
@@ -818,9 +911,31 @@ async def start_screenshot_flow(channel: discord.DMChannel, user_id: int, war_id
                    "• Take a clear screenshot of your stats\n"
                    "• Make sure all text is readable\n"
                    "• Attach the image to this DM\n\n"
-                   "I'll extract the stats from your screenshot automatically.\n\n"
-                   f"Type `cancel` to cancel.",
+                   "I'll extract the stats from your screenshot automatically.",
         color=discord.Color.blue()
     )
-    await channel.send(embed=embed)
+    
+    # Create view with cancel button
+    from discord.ui import View, Button
+    
+    class ScreenshotCancelView(View):
+        def __init__(self, user_id):
+            super().__init__(timeout=300)
+            self.user_id = user_id
+        
+        @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+        async def cancel_button(self, interaction: discord.Interaction, button: Button):
+            await interaction.response.defer(ephemeral=False)
+            
+            # Clean up session
+            if self.user_id in active_dm_sessions:
+                del active_dm_sessions[self.user_id]
+            reset_skip_rate_limit(self.user_id)
+            
+            await interaction.channel.send("❌ Stat entry cancelled.")
+            await interaction.followup.send("Cancelled.", ephemeral=False)
+            self.stop()
+    
+    view = ScreenshotCancelView(user_id)
+    await channel.send(embed=embed, view=view)
 

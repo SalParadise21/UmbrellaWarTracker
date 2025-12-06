@@ -91,16 +91,20 @@ async def setup_commands(bot):
                     def __init__(self, bot):
                         super().__init__(timeout=300)
                         self.bot = bot
+                        
+                        # Create and add channel select component
+                        self.channel_select = ChannelSelect(
+                            placeholder="Select a text channel...",
+                            channel_types=[discord.ChannelType.text],
+                            row=0
+                        )
+                        self.channel_select.callback = self.channel_select_callback
+                        self.add_item(self.channel_select)
                     
-                    @discord.ui.channel_select(
-                        placeholder="Select a text channel...",
-                        channel_types=[discord.ChannelType.text],
-                        row=0
-                    )
-                    async def channel_select(self, interaction: discord.Interaction, select: ChannelSelect):
+                    async def channel_select_callback(self, interaction: discord.Interaction):
                         await interaction.response.defer(ephemeral=True)
                         
-                        channel = select.values[0]
+                        channel = self.channel_select.values[0]
                         if not isinstance(channel, discord.TextChannel):
                             await interaction.followup.send("❌ Please select a text channel.", ephemeral=True)
                             return
@@ -142,61 +146,11 @@ async def setup_commands(bot):
                             await set_setting("lifetime_leaderboard_message_id", str(lifetime_message.id))
                         
                         await interaction.followup.send(
-                            f"✅ Leaderboards will now update in {channel.mention}",
+                            f"✅ Leaderboards will now update in {channel.mention}\n\n"
+                            f"You can run `/settings` again to see the updated configuration.",
                             ephemeral=True
                         )
-                        
-                        # Refresh the main settings view
-                        await self.refresh_main_settings(interaction, bot_ref)
                         self.stop()
-                    
-                    async def refresh_main_settings(self, interaction: discord.Interaction, bot):
-                        """Refresh the main settings view after channel selection"""
-                        # Get current settings
-                        leaderboard_channel_id = await get_setting("leaderboard_channel_id")
-                        leaderboard_channel = None
-                        if leaderboard_channel_id:
-                            try:
-                                leaderboard_channel = bot.get_channel(int(leaderboard_channel_id))
-                            except:
-                                pass
-                        
-                        # Create embed with current settings
-                        embed = discord.Embed(
-                            title="⚙️ Bot Settings",
-                            description="Current bot configuration settings.",
-                            color=discord.Color.blue()
-                        )
-                        
-                        # Leaderboard channel
-                        if leaderboard_channel:
-                            embed.add_field(
-                                name="📊 Leaderboard Channel",
-                                value=f"{leaderboard_channel.mention}\n\nAutomatic leaderboard updates are posted here.",
-                                inline=False
-                            )
-                        else:
-                            embed.add_field(
-                                name="📊 Leaderboard Channel",
-                                value="Not set\n\nUse the button below to set a channel for automatic updates.",
-                                inline=False
-                            )
-                        
-                        # Screenshot processing setting
-                        screenshot_enabled = await get_setting("screenshot_processing_enabled")
-                        screenshot_enabled = screenshot_enabled != "false"  # Default to True if not set
-                        status_text = "✅ Enabled" if screenshot_enabled else "❌ Disabled"
-                        embed.add_field(
-                            name="📷 Screenshot Processing",
-                            value=f"{status_text}\n\nWhen enabled, users can submit screenshots for automatic stat extraction.\n\nUse the buttons below to toggle this setting.",
-                            inline=False
-                        )
-                        
-                        embed.timestamp = discord.utils.utcnow()
-                        
-                        # Get the original settings view
-                        main_view = SettingsView(bot)
-                        await interaction.edit_original_response(embed=embed, view=main_view)
                 
                 channel_view = ChannelSelectView(bot_ref)
                 embed = discord.Embed(

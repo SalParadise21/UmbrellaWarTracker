@@ -5,7 +5,7 @@ from discord.ui import View, Button
 from typing import Optional
 
 from helpers.database import get_active_war, get_user_stats, get_war_by_number, get_user_rank
-from helpers.dm_handler import start_manual_entry_flow, start_edit_flow
+from helpers.dm_handler import start_manual_entry_flow, start_edit_flow, start_screenshot_flow
 from helpers.embed_helper import create_stats_embed
 
 
@@ -29,6 +29,20 @@ class StatEntryView(View):
 
         # Start manual entry flow (this sends the DM)
         await start_manual_entry_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
+               
+        self.stop()
+    
+    @discord.ui.button(label="📷 Submit Screenshot", style=discord.ButtonStyle.green)
+    async def screenshot_button(self, interaction: discord.Interaction, button: Button):
+        """Handle screenshot submission button click"""
+        # Acknowledge the button click first
+        await interaction.response.defer(ephemeral=False)
+        
+        # Send confirmation (this goes to the channel, not DM)
+        await interaction.followup.send("✅ Screenshot submission selected! Check your DMs - I'll process your screenshot.", ephemeral=False)
+
+        # Start screenshot flow (this sends the DM)
+        await start_screenshot_flow(self.dm_channel, interaction.user.id, self.war_id, self.war_number)
                
         self.stop()
     

@@ -79,8 +79,8 @@ def validate_stats(stats: Dict[str, int]) -> bool:
     if any(v < 0 for v in stats.values()):
         return False
     
-    # Check for unreasonably large values (adjust as needed)
-    max_value = 1000000
+    # Check for unreasonably large values (matches data governance rules)
+    max_value = 999999999
     if any(v > max_value for v in stats.values()):
         return False
     

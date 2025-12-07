@@ -8,9 +8,20 @@ from helpers.database import setup_war, start_war, end_war, get_war_by_number, g
 async def setup_commands(bot):
     """Register all war management commands with the bot"""
     
-    @bot.tree.command(name="war_setup", description="Setup a new war number")
+    @bot.tree.command(name="war_setup", description="Setup a new war number (Admin only)")
     @app_commands.describe(war_number="The war number to setup")
+    @app_commands.checks.has_permissions(administrator=True)
     async def war_setup(interaction: discord.Interaction, war_number: int):
+        """Setup a new war number - requires administrator permissions"""
+        # Check if command is being run in a DM
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server, not in DMs.\n\n"
+                "Admin commands require server context to check permissions.",
+                ephemeral=True
+            )
+            return
+        
         if war_number <= 0:
             await interaction.response.send_message("War number must be positive!", ephemeral=True)
             return

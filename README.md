@@ -70,7 +70,7 @@ python bot.py
 
 ### War Management
 
-- `/war_setup <war_number>` - Setup a new war number
+- `/war_setup <war_number>` - Setup a new war number **[Admin only]**
 - `/war_start <war_number>` - Start a war (deactivates all other wars) **[Admin only]**
 - `/war_end <war_number>` - End a war **[Admin only]**
 - `/view_wars` - View all wars in the database with status indicators

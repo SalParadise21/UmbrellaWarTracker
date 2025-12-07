@@ -4,7 +4,7 @@ import re
 import time
 from typing import Dict, Optional, Tuple
 
-from helpers.database import update_user_stats, set_user_stat
+from helpers.database import update_user_stats, set_user_stat, replace_user_stats, get_user_stats
 from helpers.embed_helper import create_stat_update_embed
 
 
@@ -168,8 +168,8 @@ def create_manual_entry_view(user_id: int, channel, stat_name: str, stat_index: 
             
             # Check if we're done
             if session['stat_index'] >= len(STAT_ORDER):
-                # All stats collected, save them
-                await update_user_stats(
+                # All stats collected, save them (replace existing stats)
+                await replace_user_stats(
                     self.user_id,
                     session['war_id'],
                     **session['stats']
@@ -378,8 +378,8 @@ async def handle_dm_message(message: discord.Message, bot):
                         async def yes_button(self, interaction: discord.Interaction, button: Button):
                             await interaction.response.defer(ephemeral=False)
                             
-                            # Save the stats
-                            await update_user_stats(
+                            # Save the stats (replace existing stats)
+                            await replace_user_stats(
                                 self.user_id,
                                 self.war_id,
                                 **self.extracted_stats
@@ -503,8 +503,8 @@ async def handle_dm_message(message: discord.Message, bot):
         
         # Check if we're done
         if session['stat_index'] >= len(STAT_ORDER):
-            # All stats collected, save them
-            await update_user_stats(
+            # All stats collected, save them (replace existing stats)
+            await replace_user_stats(
                 user_id,
                 session['war_id'],
                 **session['stats']
@@ -576,8 +576,8 @@ async def handle_dm_message(message: discord.Message, bot):
             
             # Check if we're done
             if session['stat_index'] >= len(STAT_ORDER):
-                # All stats collected, save them
-                await update_user_stats(
+                # All stats collected, save them (replace existing stats)
+                await replace_user_stats(
                     user_id,
                     session['war_id'],
                     **session['stats']
@@ -761,6 +761,10 @@ async def start_manual_entry_flow(channel: discord.DMChannel, user_id: int, war_
         # User already has an active session, don't start a new one
         return
     
+    # Check if user already has stats for this war
+    existing_stats = await get_user_stats(user_id, war_id)
+    has_existing_stats = existing_stats and any(v > 0 for k, v in existing_stats.items() if k not in ['user_id', 'id', 'war_id'])
+    
     # Initialize session for step-by-step entry
     active_dm_sessions[user_id] = {
         'war_id': war_id,
@@ -772,16 +776,29 @@ async def start_manual_entry_flow(channel: discord.DMChannel, user_id: int, war_
     
     # Send first stat question
     progress = f"(1/{len(STAT_ORDER)})"
+    if has_existing_stats:
+        description = f"**{STAT_NAMES[STAT_ORDER[0]]}**\n\n" \
+                     f"⚠️ **You already have stats for War {war_number}.**\n" \
+                     f"Submitting new stats will **replace** your existing stats for this war.\n\n" \
+                     f"I'll ask you for each stat one by one.\n" \
+                     f"Please enter the value for this stat.\n\n" \
+                     f"**Requirements:**\n" \
+                     f"• Numbers only (0-999,999,999)\n" \
+                     f"• No spaces, text, or hyphens\n" \
+                     f"• Value must be >= 0 and <= 999,999,999"
+    else:
+        description = f"**{STAT_NAMES[STAT_ORDER[0]]}**\n\n" \
+                     f"I'll ask you for each stat one by one.\n" \
+                     f"Please enter the value for this stat.\n\n" \
+                     f"**Requirements:**\n" \
+                     f"• Numbers only (0-999,999,999)\n" \
+                     f"• No spaces, text, or hyphens\n" \
+                     f"• Value must be >= 0 and <= 999,999,999"
+    
     embed = discord.Embed(
         title=f"📊 Manual Stat Entry - War {war_number}",
-        description=f"**{STAT_NAMES[STAT_ORDER[0]]}**\n\n"
-                   f"I'll ask you for each stat one by one.\n"
-                   f"Please enter the value for this stat.\n\n"
-                   f"**Requirements:**\n"
-                   f"• Numbers only (0-999,999,999)\n"
-                   f"• No spaces, text, or hyphens\n"
-                   f"• Value must be >= 0 and <= 999,999,999",
-        color=discord.Color.blue()
+        description=description,
+        color=discord.Color.orange() if has_existing_stats else discord.Color.blue()
     )
     view = create_manual_entry_view(user_id, channel, STAT_ORDER[0], 0, len(STAT_ORDER))
     await channel.send(embed=embed, view=view)
@@ -885,6 +902,10 @@ async def start_screenshot_flow(channel: discord.DMChannel, user_id: int, war_id
         # User already has an active session, don't start a new one
         return
     
+    # Check if user already has stats for this war
+    existing_stats = await get_user_stats(user_id, war_id)
+    has_existing_stats = existing_stats and any(v > 0 for k, v in existing_stats.items() if k not in ['user_id', 'id', 'war_id'])
+    
     # Initialize session for screenshot submission
     active_dm_sessions[user_id] = {
         'war_id': war_id,
@@ -894,15 +915,27 @@ async def start_screenshot_flow(channel: discord.DMChannel, user_id: int, war_id
     }
     
     # Send instructions
+    if has_existing_stats:
+        description = f"⚠️ **You already have stats for War {war_number}.**\n" \
+                     f"Submitting new stats will **replace** your existing stats for this war.\n\n" \
+                     f"Please attach a screenshot of your stats screen.\n\n" \
+                     f"**Instructions:**\n" \
+                     f"• Take a clear screenshot of your stats\n" \
+                     f"• Make sure all text is readable\n" \
+                     f"• Attach the image to this DM\n\n" \
+                     f"I'll extract the stats from your screenshot automatically."
+    else:
+        description = "Please attach a screenshot of your stats screen.\n\n" \
+                     "**Instructions:**\n" \
+                     "• Take a clear screenshot of your stats\n" \
+                     "• Make sure all text is readable\n" \
+                     "• Attach the image to this DM\n\n" \
+                     "I'll extract the stats from your screenshot automatically."
+    
     embed = discord.Embed(
         title=f"📷 Screenshot Submission - War {war_number}",
-        description="Please attach a screenshot of your stats screen.\n\n"
-                   "**Instructions:**\n"
-                   "• Take a clear screenshot of your stats\n"
-                   "• Make sure all text is readable\n"
-                   "• Attach the image to this DM\n\n"
-                   "I'll extract the stats from your screenshot automatically.",
-        color=discord.Color.blue()
+        description=description,
+        color=discord.Color.orange() if has_existing_stats else discord.Color.blue()
     )
     
     # Create view with cancel button

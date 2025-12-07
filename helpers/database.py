@@ -272,6 +272,67 @@ async def update_user_stats(
         await db.commit()
 
 
+async def replace_user_stats(
+    user_id: int,
+    war_id: Optional[int],
+    enemy_player_damage: int = 0,
+    friendly_player_damage: int = 0,
+    enemy_structure_vehicle_damage: int = 0,
+    friendly_structure_vehicle_damage: int = 0,
+    friendly_construction: int = 0,
+    friendly_repairing: int = 0,
+    friendly_healing: int = 0,
+    friendly_revivals: int = 0,
+    vehicles_captured_by_enemy: int = 0,
+    vehicle_self_damage_neutral: int = 0,
+    vehicle_self_damage_colonial: int = 0,
+    vehicle_self_damage_warden: int = 0,
+    materials_submitted: int = 0,
+    materials_gathered: int = 0,
+    supply_value_delivered: int = 0
+):
+    """Replace user stats for a war (replaces existing values instead of adding)"""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("""
+            INSERT INTO user_stats 
+            (user_id, war_id, enemy_player_damage, friendly_player_damage, enemy_structure_vehicle_damage,
+             friendly_structure_vehicle_damage, friendly_construction, friendly_repairing, friendly_healing,
+             friendly_revivals, vehicles_captured_by_enemy, vehicle_self_damage_neutral,
+             vehicle_self_damage_colonial, vehicle_self_damage_warden, materials_submitted,
+             materials_gathered, supply_value_delivered, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, war_id) DO UPDATE SET
+                enemy_player_damage = ?,
+                friendly_player_damage = ?,
+                enemy_structure_vehicle_damage = ?,
+                friendly_structure_vehicle_damage = ?,
+                friendly_construction = ?,
+                friendly_repairing = ?,
+                friendly_healing = ?,
+                friendly_revivals = ?,
+                vehicles_captured_by_enemy = ?,
+                vehicle_self_damage_neutral = ?,
+                vehicle_self_damage_colonial = ?,
+                vehicle_self_damage_warden = ?,
+                materials_submitted = ?,
+                materials_gathered = ?,
+                supply_value_delivered = ?,
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            user_id, war_id, enemy_player_damage, friendly_player_damage, enemy_structure_vehicle_damage,
+            friendly_structure_vehicle_damage, friendly_construction, friendly_repairing, friendly_healing,
+            friendly_revivals, vehicles_captured_by_enemy, vehicle_self_damage_neutral,
+            vehicle_self_damage_colonial, vehicle_self_damage_warden, materials_submitted,
+            materials_gathered, supply_value_delivered, datetime.now().isoformat(),
+            enemy_player_damage, friendly_player_damage, enemy_structure_vehicle_damage,
+            friendly_structure_vehicle_damage, friendly_construction, friendly_repairing, friendly_healing,
+            friendly_revivals, vehicles_captured_by_enemy, vehicle_self_damage_neutral,
+            vehicle_self_damage_colonial, vehicle_self_damage_warden, materials_submitted,
+            materials_gathered, supply_value_delivered
+        ))
+        await db.commit()
+
+
 async def set_user_stat(user_id: int, war_id: int, stat_name: str, stat_value: int) -> bool:
     """Set a specific stat value for a user (for editing)"""
     # Validate stat name

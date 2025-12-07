@@ -157,6 +157,10 @@ def create_retry_choice_view(user_id: int, war_id: int, war_number: int, dm_chan
                     self.stop()
                     return
                 
+                # Clean up existing session to allow restart
+                if self.user_id in active_dm_sessions:
+                    del active_dm_sessions[self.user_id]
+                
                 # Restart screenshot flow
                 await start_screenshot_flow(
                     interaction.channel,
@@ -190,6 +194,10 @@ def create_retry_choice_view(user_id: int, war_id: int, war_number: int, dm_chan
                     await interaction.followup.send("❌ This command can only be used in DMs.", ephemeral=True)
                     self.stop()
                     return
+                
+                # Clean up existing session to allow manual entry
+                if self.user_id in active_dm_sessions:
+                    del active_dm_sessions[self.user_id]
                 
                 # Start manual entry flow
                 await start_manual_entry_flow(

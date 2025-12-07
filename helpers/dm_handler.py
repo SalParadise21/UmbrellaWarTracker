@@ -131,6 +131,113 @@ def reset_skip_rate_limit(user_id: int):
     skip_rate_limit.pop(user_id, None)
 
 
+def create_retry_choice_view(user_id: int, war_id: int, war_number: int, dm_channel):
+    """
+    Create a View with buttons for retry choice after screenshot confirmation fails
+    """
+    from discord.ui import View, Button
+    
+    class RetryChoiceView(View):
+        def __init__(self, user_id, war_id, war_number, dm_channel):
+            super().__init__(timeout=300)
+            self.user_id = user_id
+            self.war_id = war_id
+            self.war_number = war_number
+            self.dm_channel = dm_channel
+        
+        @discord.ui.button(label="📷 Rerun Image Processing", style=discord.ButtonStyle.blurple)
+        async def rerun_button(self, interaction: discord.Interaction, button: Button):
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer(ephemeral=False)
+                
+                # Ensure channel is a DMChannel
+                if not isinstance(interaction.channel, discord.DMChannel):
+                    await interaction.followup.send("❌ This command can only be used in DMs.", ephemeral=True)
+                    self.stop()
+                    return
+                
+                # Restart screenshot flow
+                await start_screenshot_flow(
+                    interaction.channel,
+                    self.user_id,
+                    self.war_id,
+                    self.war_number
+                )
+                
+                self.stop()
+            except Exception as e:
+                print(f"Error in rerun_button: {e}")
+                import traceback
+                traceback.print_exc()
+                try:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+                    else:
+                        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+                except:
+                    pass
+                self.stop()
+        
+        @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.green)
+        async def manual_button(self, interaction: discord.Interaction, button: Button):
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer(ephemeral=False)
+                
+                # Ensure channel is a DMChannel
+                if not isinstance(interaction.channel, discord.DMChannel):
+                    await interaction.followup.send("❌ This command can only be used in DMs.", ephemeral=True)
+                    self.stop()
+                    return
+                
+                # Start manual entry flow
+                await start_manual_entry_flow(
+                    interaction.channel,
+                    self.user_id,
+                    self.war_id,
+                    self.war_number
+                )
+                
+                self.stop()
+            except Exception as e:
+                print(f"Error in manual_button: {e}")
+                import traceback
+                traceback.print_exc()
+                try:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+                    else:
+                        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+                except:
+                    pass
+                self.stop()
+        
+        @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+        async def cancel_button(self, interaction: discord.Interaction, button: Button):
+            try:
+                await interaction.response.defer(ephemeral=False)
+                
+                # Clean up session
+                if self.user_id in active_dm_sessions:
+                    del active_dm_sessions[self.user_id]
+                reset_skip_rate_limit(self.user_id)
+                
+                await interaction.followup.send("❌ Stat entry cancelled.", ephemeral=False)
+                self.stop()
+            except Exception as e:
+                print(f"Error in cancel_button: {e}")
+                import traceback
+                traceback.print_exc()
+                try:
+                    await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+                except:
+                    pass
+                self.stop()
+    
+    return RetryChoiceView(user_id, war_id, war_number, dm_channel)
+
+
 def create_manual_entry_view(user_id: int, channel, stat_name: str, stat_index: int, total_stats: int):
     """
     Create a View with Skip and Cancel buttons for manual entry prompts
@@ -395,6 +502,12 @@ async def handle_dm_message(message: discord.Message, bot):
                         async def no_button(self, interaction: discord.Interaction, button: Button):
                             await interaction.response.defer(ephemeral=False)
                             
+                            # Clean up the confirmation state from session
+                            if self.user_id in active_dm_sessions:
+                                session = active_dm_sessions[self.user_id]
+                                session.pop('waiting_for_confirmation', None)
+                                session.pop('extracted_stats', None)
+                            
                             # Ask if they want to rerun image processing or do manual entry
                             embed = discord.Embed(
                                 title="📷 Stats Not Correct",
@@ -404,56 +517,16 @@ async def handle_dm_message(message: discord.Message, bot):
                                 color=discord.Color.orange()
                             )
                             
-                            class RetryChoiceView(View):
-                                def __init__(self, user_id, war_id, war_number, dm_channel):
-                                    super().__init__(timeout=300)
-                                    self.user_id = user_id
-                                    self.war_id = war_id
-                                    self.war_number = war_number
-                                    self.dm_channel = dm_channel
-                                
-                                @discord.ui.button(label="📷 Rerun Image Processing", style=discord.ButtonStyle.blurple)
-                                async def rerun_button(self, interaction: discord.Interaction, button: Button):
-                                    await interaction.response.defer(ephemeral=False)
-                                    
-                                    # Restart screenshot flow
-                                    await start_screenshot_flow(
-                                        interaction.channel,
-                                        self.user_id,
-                                        self.war_id,
-                                        self.war_number
-                                    )
-                                    
-                                    self.stop()
-                                
-                                @discord.ui.button(label="✏️ Manual Entry", style=discord.ButtonStyle.green)
-                                async def manual_button(self, interaction: discord.Interaction, button: Button):
-                                    await interaction.response.defer(ephemeral=False)
-                                    
-                                    # Start manual entry flow
-                                    await start_manual_entry_flow(
-                                        interaction.channel,
-                                        self.user_id,
-                                        self.war_id,
-                                        self.war_number
-                                    )
-                                    
-                                    self.stop()
-                                
-                                @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
-                                async def cancel_button(self, interaction: discord.Interaction, button: Button):
-                                    await interaction.response.defer(ephemeral=False)
-                                    
-                                    # Clean up session
-                                    if self.user_id in active_dm_sessions:
-                                        del active_dm_sessions[self.user_id]
-                                    reset_skip_rate_limit(self.user_id)
-                                    
-                                    await interaction.channel.send("❌ Stat entry cancelled.")
-                                    self.stop()
+                            # Create retry choice view using the factory function
+                            retry_view = create_retry_choice_view(
+                                self.user_id, 
+                                self.war_id, 
+                                self.war_number, 
+                                self.dm_channel
+                            )
                             
-                            retry_view = RetryChoiceView(self.user_id, self.war_id, self.war_number, self.dm_channel)
-                            await interaction.channel.send(embed=embed, view=retry_view)
+                            # Send the followup with the new view, then stop the current view
+                            await interaction.followup.send(embed=embed, view=retry_view)
                             self.stop()
                     
                     view = ScreenshotConfirmView(user_id, session['war_id'], session.get('war_number', 'Unknown'), all_stats, message.channel)

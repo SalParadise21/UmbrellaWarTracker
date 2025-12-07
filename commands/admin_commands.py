@@ -15,6 +15,15 @@ async def setup_commands(bot):
     @app_commands.checks.has_permissions(administrator=True)
     async def settings(interaction: discord.Interaction):
         """View and manage bot settings - requires administrator permissions"""
+        # Check if command is being run in a DM
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server, not in DMs.\n\n"
+                "Admin commands require server context to check permissions.",
+                ephemeral=True
+            )
+            return
+        
         # Get current settings
         leaderboard_channel_id = await get_setting("leaderboard_channel_id")
         leaderboard_channel = None
@@ -213,6 +222,15 @@ async def setup_commands(bot):
     @app_commands.checks.has_permissions(administrator=True)
     async def export_database(interaction: discord.Interaction):
         """Export the entire database to a CSV file and send it via DM"""
+        # Check if command is being run in a DM
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server, not in DMs.\n\n"
+                "Admin commands require server context to check permissions.",
+                ephemeral=True
+            )
+            return
+        
         # Defer immediately to avoid interaction timeout
         await interaction.response.defer(ephemeral=True)
         

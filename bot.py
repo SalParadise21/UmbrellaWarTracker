@@ -57,6 +57,15 @@ def register_sync_command():
     @app_commands.checks.has_permissions(administrator=True)
     async def sync_commands(interaction: discord.Interaction):
         """Re-register all bot commands"""
+        # Check if command is being run in a DM
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server, not in DMs.\n\n"
+                "Admin commands require server context to check permissions.",
+                ephemeral=True
+            )
+            return
+        
         # Defer immediately to avoid interaction timeout
         await interaction.response.defer(ephemeral=True)
         

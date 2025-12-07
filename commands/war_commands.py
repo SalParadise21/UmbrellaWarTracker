@@ -26,6 +26,15 @@ async def setup_commands(bot):
     @app_commands.checks.has_permissions(administrator=True)
     async def war_start(interaction: discord.Interaction, war_number: int):
         """Start a war - requires administrator permissions"""
+        # Check if command is being run in a DM
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server, not in DMs.\n\n"
+                "Admin commands require server context to check permissions.",
+                ephemeral=True
+            )
+            return
+        
         war = await get_war_by_number(war_number)
         if not war:
             await interaction.response.send_message(f"War {war_number} has not been setup yet! Use /war_setup first.", ephemeral=True)
@@ -64,6 +73,15 @@ async def setup_commands(bot):
     @app_commands.checks.has_permissions(administrator=True)
     async def war_end(interaction: discord.Interaction, war_number: int):
         """End a war - requires administrator permissions"""
+        # Check if command is being run in a DM
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server, not in DMs.\n\n"
+                "Admin commands require server context to check permissions.",
+                ephemeral=True
+            )
+            return
+        
         success = await end_war(war_number)
         if success:
             await interaction.response.send_message(f"War {war_number} has been ended!", ephemeral=False)

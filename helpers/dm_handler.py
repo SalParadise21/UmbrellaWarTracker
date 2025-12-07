@@ -232,13 +232,6 @@ async def handle_dm_message(message: discord.Message, bot):
     
     session = active_dm_sessions[user_id]
     
-    # Handle cancel
-    if message.content.lower() == 'cancel':
-        del active_dm_sessions[user_id]
-        reset_skip_rate_limit(user_id)
-        await message.channel.send("Stat entry cancelled.")
-        return True
-    
     # Handle screenshot submission
     if session.get('mode') == 'screenshot':
         # Check if message has image attachments
@@ -475,69 +468,13 @@ async def handle_dm_message(message: discord.Message, bot):
                     return True
             else:
                 await message.channel.send(
-                    "❌ Please send an image file. Supported formats: PNG, JPG, JPEG, GIF, WEBP\n\n"
-                    f"Type `cancel` to cancel."
+                    "❌ Please send an image file. Supported formats: PNG, JPG, JPEG, GIF, WEBP"
                 )
                 return True
         else:
             await message.channel.send(
-                "📷 Please attach a screenshot of your stats.\n\n"
-                f"Type `cancel` to cancel."
+                "📷 Please attach a screenshot of your stats."
             )
-            return True
-    
-    # Handle skip (for manual step-by-step entry) with rate limiting
-    if message.content.lower() == 'skip' and session.get('mode') == 'manual_step':
-        # Check rate limit
-        if not check_skip_rate_limit(user_id):
-            # Rate limited - ignore this skip
-            return True
-        
-        # Use 0 for skipped stat
-        if 'stats' not in session:
-            session['stats'] = {}
-        session['stats'][session['current_stat']] = 0
-        
-        # Move to next stat
-        session['stat_index'] += 1
-        
-        # Check if we're done
-        if session['stat_index'] >= len(STAT_ORDER):
-            # All stats collected, save them (replace existing stats)
-            await replace_user_stats(
-                user_id,
-                session['war_id'],
-                **session['stats']
-            )
-            del active_dm_sessions[user_id]
-            reset_skip_rate_limit(user_id)
-            
-            embed = create_stat_update_embed(session['stats'])
-            await message.channel.send(
-                "✅ All stats have been recorded!",
-                embed=embed
-            )
-            return True
-        else:
-            # Ask for next stat
-            next_stat = STAT_ORDER[session['stat_index']]
-            session['current_stat'] = next_stat
-            
-            progress = f"({session['stat_index']}/{len(STAT_ORDER)})"
-            embed = discord.Embed(
-                title=f"📊 Stat Entry {progress}",
-                description=f"**{STAT_NAMES[next_stat]}**\n\n"
-                           f"Please enter the value for this stat.\n\n"
-                           f"**Requirements:**\n"
-                           f"• Numbers only (0-999,999,999)\n"
-                           f"• No spaces, text, or hyphens\n"
-                           f"• Value must be >= 0 and <= 999,999,999",
-                color=discord.Color.blue()
-            )
-            view = create_manual_entry_view(user_id, message.channel, next_stat, session['stat_index'], len(STAT_ORDER))
-            await message.channel.send(embed=embed, view=view)
-            # Reset rate limit when new prompt is sent
-            reset_skip_rate_limit(user_id)
             return True
     
     # Handle manual step-by-step entry mode
@@ -624,20 +561,13 @@ async def handle_dm_message(message: discord.Message, bot):
             if 'waiting_for_stat_selection' in session and session['waiting_for_stat_selection']:
                 # User should have clicked a button, this shouldn't happen via text
                 await message.channel.send(
-                    "Please use the buttons above to select which stat you'd like to edit, or type `cancel` to cancel."
+                    "Please use the buttons above to select which stat you'd like to edit."
                 )
                 return True
             
             if 'waiting_for_value' in session and session['waiting_for_value']:
                 # User is entering a new value for a stat
                 content = message.content.strip()
-                
-                # Handle cancel
-                if content.lower() == 'cancel':
-                    del active_dm_sessions[user_id]
-                    reset_skip_rate_limit(user_id)
-                    await message.channel.send("Stat editing cancelled.")
-                    return True
                 
                 # Validate input using data governance rules
                 is_valid, new_value, error_message = validate_stat_input(content)
@@ -655,8 +585,7 @@ async def handle_dm_message(message: discord.Message, bot):
                                    f"• Numbers only (0-999,999,999)\n"
                                    f"• No spaces, text, or hyphens\n"
                                    f"• Value must be >= 0 and <= 999,999,999\n\n"
-                                   f"Please enter the new value for this stat.\n"
-                                   f"Type `cancel` to cancel.",
+                                   f"Please enter the new value for this stat.",
                         color=discord.Color.red()
                     )
                     await message.channel.send(embed=embed)
@@ -853,8 +782,7 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
                                f"**Requirements:**\n"
                                f"• Numbers only (0-999,999,999)\n"
                                f"• No spaces, text, or hyphens\n"
-                               f"• Value must be >= 0 and <= 999,999,999\n\n"
-                               f"Type `cancel` to cancel.",
+                               f"• Value must be >= 0 and <= 999,999,999",
                     color=discord.Color.blue()
                 )
                 await interaction.channel.send(embed=embed)
@@ -887,8 +815,7 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
         embed = discord.Embed(
             title=f"✏️ Edit Stats - War {war_number}",
             description="Select which stat you'd like to edit from the buttons below.\n\n"
-                       "Click a button to edit that stat's value.\n"
-                       "Type `cancel` to cancel.",
+                       "Click a button to edit that stat's value.",
             color=discord.Color.blue()
         )
     

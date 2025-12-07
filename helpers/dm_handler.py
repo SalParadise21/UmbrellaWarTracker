@@ -714,7 +714,6 @@ async def handle_dm_message(message: discord.Message, bot):
                             updated_stats,
                             show_current=True
                         )
-                        await interaction.followup.send("Select which stat you'd like to edit next.", ephemeral=False)
                         self.stop()
                     
                     @discord.ui.button(label="No, I'm done", style=discord.ButtonStyle.red)
@@ -730,7 +729,6 @@ async def handle_dm_message(message: discord.Message, bot):
                             "✅ All stats have been updated! Here's your final stats:",
                             embed=final_embed
                         )
-                        await interaction.followup.send("✅ Stats updated successfully!", ephemeral=False)
                         self.stop()
                 
                 view = EditMoreView(user_id, session['war_id'], session.get('war_number', 'Unknown'), session['editing_stats'])
@@ -837,7 +835,24 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
     }
     
     # Create view with buttons for each stat
-    view = View(timeout=300)
+    class EditStatsView(View):
+        def __init__(self, user_id):
+            super().__init__(timeout=300)
+            self.user_id = user_id
+        
+        @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, row=4)
+        async def cancel_button(self, interaction: discord.Interaction, button: Button):
+            await interaction.response.defer(ephemeral=False)
+            
+            # Clean up session
+            if self.user_id in active_dm_sessions:
+                del active_dm_sessions[self.user_id]
+            reset_skip_rate_limit(self.user_id)
+            
+            await interaction.followup.send("❌ Stat editing cancelled.", ephemeral=False)
+            self.stop()
+    
+    view = EditStatsView(user_id)
     
     # Add buttons for all stats (Discord limit is 25, we have 15)
     for stat in STAT_ORDER:
@@ -866,10 +881,30 @@ async def start_edit_flow(channel: discord.DMChannel, user_id: int, war_id: int,
                                f"• Value must be >= 0 and <= 999,999,999",
                     color=discord.Color.blue()
                 )
-                await interaction.channel.send(embed=embed)
+                # Create view with cancel button
+                from discord.ui import View, Button
+                
+                class EditStatCancelView(View):
+                    def __init__(self, user_id):
+                        super().__init__(timeout=300)
+                        self.user_id = user_id
+                    
+                    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red)
+                    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+                        await interaction.response.defer(ephemeral=False)
+                        
+                        # Clean up session
+                        if self.user_id in active_dm_sessions:
+                            del active_dm_sessions[self.user_id]
+                        reset_skip_rate_limit(self.user_id)
+                        
+                        await interaction.followup.send("❌ Stat editing cancelled.", ephemeral=False)
+                        self.stop()
+                
+                cancel_view = EditStatCancelView(user_id)
+                await interaction.channel.send(embed=embed, view=cancel_view)
                 # Reset rate limit when new prompt is sent
                 reset_skip_rate_limit(user_id)
-                await interaction.followup.send("Enter the new value in the chat.", ephemeral=False)
             
             return button_callback
         
